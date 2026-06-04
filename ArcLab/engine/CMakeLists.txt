@@ -1,5 +1,6 @@
 add_library(arclab_engine
     engine.cpp
+    renderer/Renderer.cpp
 )
 
 target_include_directories(arclab_engine

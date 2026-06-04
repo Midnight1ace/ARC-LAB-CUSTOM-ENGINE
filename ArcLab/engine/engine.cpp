@@ -4,9 +4,11 @@
 #include "engine/serialization/Serialization.h"
 #include "engine/simulation/Experiment.h"
 #include "engine/simulation/Simulation.h"
+#include "engine/tools/Benchmark.h"
 
 #include <charconv>
 #include <filesystem>
+#include <fstream>
 #include <optional>
 #include <string_view>
 #include <system_error>
@@ -17,6 +19,7 @@ namespace {
 struct DemoOptions {
     double durationSeconds = 5.0;
     std::filesystem::path experimentPath = "experiments/DefaultExperiment.json";
+    bool runSweep = false;
 };
 
 DemoOptions parse_options(int argc, char** argv)
@@ -38,10 +41,35 @@ DemoOptions parse_options(int argc, char** argv)
             }
         } else if (arg == "--experiment" && i + 1 < argc) {
             options.experimentPath = argv[++i];
+        } else if (arg == "--sweep") {
+            options.runSweep = true;
         }
     }
 
     return options;
+}
+
+bool export_sweep_csv(const std::filesystem::path& path, const std::vector<BatchRunResult>& results)
+{
+    std::ofstream file(path);
+    if (!file.is_open()) {
+        return false;
+    }
+
+    file << "label,magnetic_field_strength,duration_seconds,active_particles,lost_particles,average_velocity,total_kinetic_energy,average_distance_from_center,wall_seconds\n";
+    for (const BatchRunResult& result : results) {
+        file << result.label << ','
+             << result.fieldStrength << ','
+             << result.durationSeconds << ','
+             << result.stats.activeParticles << ','
+             << result.stats.lostParticles << ','
+             << result.stats.averageVelocity << ','
+             << result.stats.totalKineticEnergy << ','
+             << result.stats.averageDistanceFromCenter << ','
+             << result.wallSeconds << '\n';
+    }
+
+    return true;
 }
 
 } // namespace
@@ -70,6 +98,28 @@ int run_console_demo(int argc, char** argv)
     log_info("ArcLab Engine booted.");
     log_info("Running experiment: " + experiment.name);
     log_info("Fixed timestep: " + to_string_trimmed(experiment.settings.fixedDt) + " seconds");
+
+    if (options.runSweep) {
+        const std::vector<double> strengths { 0.5, 1.0, 2.5, 5.0, 10.0 };
+        const std::vector<BatchRunResult> sweep = sweep_magnetic_field(experiment, strengths, options.durationSeconds);
+
+        std::filesystem::create_directories("results");
+        const std::filesystem::path sweepPath = "results/magnetic_field_sweep.csv";
+        if (!export_sweep_csv(sweepPath, sweep)) {
+            log_error("Failed to export sweep CSV: " + sweepPath.string());
+            return 1;
+        }
+
+        for (const BatchRunResult& result : sweep) {
+            log_info(result.label +
+                     " active=" + std::to_string(result.stats.activeParticles) +
+                     " lost=" + std::to_string(result.stats.lostParticles) +
+                     " avg_distance=" + to_string_trimmed(result.stats.averageDistanceFromCenter));
+        }
+
+        log_info("Exported sweep CSV: " + sweepPath.string());
+        return 0;
+    }
 
     const int stepCount = static_cast<int>(options.durationSeconds / experiment.settings.fixedDt);
     const int reportEvery = static_cast<int>(0.5 / experiment.settings.fixedDt);

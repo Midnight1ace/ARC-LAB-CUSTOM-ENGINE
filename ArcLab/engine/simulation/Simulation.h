@@ -2,6 +2,7 @@
 
 #include "engine/simulation/Experiment.h"
 #include "engine/simulation/Recorder.h"
+#include "engine/simulation/Snapshot.h"
 
 namespace arclab {
 
@@ -73,6 +74,27 @@ public:
     const SensorRecorder& recorder() const
     {
         return recorder_;
+    }
+
+    SimulationSnapshot snapshot() const
+    {
+        return make_snapshot(timeSeconds_, world_.particles());
+    }
+
+    void restore_snapshot(const SimulationSnapshot& snapshot)
+    {
+        world_.particles().clear();
+        for (const ParticleSnapshot& saved : snapshot.particles) {
+            Particle particle;
+            particle.position = saved.position;
+            particle.velocity = saved.velocity;
+            particle.mass = saved.mass;
+            particle.charge = saved.charge;
+            particle.lifetime = saved.lifetime;
+            particle.age = saved.age;
+            world_.particles().spawn(particle);
+        }
+        timeSeconds_ = snapshot.timeSeconds;
     }
 
 private:
